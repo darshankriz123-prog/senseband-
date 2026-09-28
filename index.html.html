@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Sensory & Location Monitor</title>
+
+<!-- Import Chart.js for drawing the graphs -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Import Leaflet.js for the interactive map -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f4f9;
+    margin: 0;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 20px;
+    color: #333;
+  }
+  .dashboard {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    width: 100%;
+    max-width: 900px;
+  }
+  .card {
+    background: white;
+    padding: 15px;
+    border-radius: 12px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  }
+  .chart-container {
+    position: relative;
+    height: 180px;
+    width: 100%;
+  }
+  
+  /* Map Container */
+  .map-card {
+    grid-column: span 2; 
+  }
+  #map {
+    height: 300px;
+    border-radius: 8px;
+    z-index: 1; 
+  }
+
+  /* Status Panel Styling */
+  .status-panel {
+    grid-column: span 2;
+    background: #e0ffe0;
+    color: #006600;
+    padding: 15px;
+    border-radius: 12px;
+    text-align: center;
+    font-size: 1.3em;
+    font-weight: bold;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
+  }
+  .status-panel.alert {
+    background: #ffe0e0;
+    color: #cc0000;
+    animation: pulse 1s infinite;
+  }
+  
+  /* Vibration Motor Styling */
+  .vibrator-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #f0f0f0;
+    color: #777;
+    border-radius: 12px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    font-size: 1.4em;
+    font-weight: bold;
+    transition: all 0.3s ease;
+  }
+  .vibrator-card.active {
+    background: #fff0b3;
+    color: #b38600;
+    animation: shake 0.3s infinite;
+  }
+  .motor-icon { font-size: 2.5em; margin-bottom: 10px; }
+
+  /* Control Panels */
+  .control-group {
+    grid-column: span 2;
+    background: white;
+    padding: 15px;
+    border-radius: 12px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    text-align: center;
+  }
+  .control-group h4 { margin-top: 0; margin-bottom: 10px; color: #555; }
+  button {
+    padding: 8px 15px; margin: 5px; font-size: 0.9em;
+    background-color: #007bff; color: white; border: none;
+    border-radius: 6px; cursor: pointer; transition: background 0.2s;
+  }
+  button:hover { background-color: #0056b3; }
+  button.danger { background-color: #dc3545; }
+  button.danger:hover { background-color: #a71d2a; }
+  button.warning { background-color: #ff9900; }
+  button.warning:hover { background-color: #cc7a00; }
+  button.success { background-color: #28a745; }
+  button.success:hover { background-color: #1e7e34; }
+  button.setup { background-color: #6f42c1; font-weight: bold;}
+  button.setup:hover { background-color: #59339d; }
+  
+  @keyframes pulse {
+    0% { transform: scale(1); box-shadow: 0 0 10px rgba(204,0,0,0.5); }
+    50% { transform: scale(1.02); box-shadow: 0 0 20px rgba(204,0,0,0.8); }
+    100% { transform: scale(1); box-shadow: 0 0 10px rgba(204,0,0,0.5); }
+  }
+  @keyframes shake {
+    0% { transform: translate(0, 0) rotate(0deg); }
+    25% { transform: translate(-3px, 2px) rotate(-2deg); }
+    50% { transform: translate(3px, -2px) rotate(2deg); }
+    75% { transform: translate(-3px, -2px) rotate(-2deg); }
+    100% { transform: translate(0, 0) rotate(0deg); }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h2>Live Sensory & GPS Monitoring Dashboard</h2>
+  <p>Real-time telemetry and location tracking simulation</p>
+</div>
+
+<div class="dashboard">
+  <!-- Status Banner -->
+  <div id="statusPanel" class="status-panel">
+    Status: Calm Environment (No Distress)
+  </div>
+
+  <!-- GPS Map Panel -->
+  <div class="card map-card">
+    <div style="text-align:center; font-weight:bold; margin-bottom:5px;">Live Location Tracker</div>
+    <div id="map"></div>
+  </div>
+
+  <!-- Heart Rate Chart -->
+  <div class="card">
+    <div style="text-align:center; font-weight:bold; margin-bottom:5px;">Heart Rate (BPM)</div>
+    <div class="chart-container"><canvas id="hrChart"></canvas></div>
+  </div>
+
+  <!-- Sound Chart -->
+  <div class="card">
+    <div style="text-align:center; font-weight:bold; margin-bottom:5px;">Ambient Sound (dB)</div>
+    <div class="chart-container"><canvas id="soundChart"></canvas></div>
+  </div>
+
+  <!-- Light Chart -->
+  <div class="card">
+    <div style="text-align:center; font-weight:bold; margin-bottom:5px;">Light Intensity (%)</div>
+    <div class="chart-container"><canvas id="lightChart"></canvas></div>
+  </div>
+
+  <!-- Vibration Motor Status -->
+  <div id="vibratorCard" class="vibrator-card">
+    <div id="motorIcon" class="motor-icon">⏸️</div>
+    <div id="motorText">Vibration Motor: IDLE</div>
+  </div>
+
+  <!-- Alert Threshold Settings -->
+  <div class="control-group" style="background-color: #f8f9fa; border: 1px solid #dee2e6;">
+    <h4>Alert Threshold Settings</h4>
+    <div style="display: flex; justify-content: space-around; flex-wrap: wrap; margin-top: 10px;">
+      <div style="margin: 5px;">
+        <label for="hrThreshold" style="font-size: 0.95em; color: #555; font-weight: bold;">Max Heart Rate (BPM): </label>
+        <input type="number" id="hrThreshold" value="120" style="width: 70px; padding: 5px; border: 1px solid #ccc; border-radius: 4px; font-size: 1em;">
+      </div>
+      <div style="margin: 5px;">
+        <label for="soundThreshold" style="font-size: 0.95em; color: #555; font-weight: bold;">Max Sound (dB): </label>
+        <input type="number" id="soundThreshold" value="85" style="width: 70px; padding: 5px; border: 1px solid #ccc; border-radius: 4px; font-size: 1em;">
+      </div>
+      <div style="margin: 5px;">
+        <label for="lightThreshold" style="font-size: 0.95em; color: #555; font-weight: bold;">Max Light (%): </label>
+        <input type="number" id="lightThreshold" value="90" style="width: 70px; padding: 5px; border: 1px solid #ccc; border-radius: 4px; font-size: 1em;">
+      </div>
+    </div>
+  </div>
+
+  <!-- Simulation Controls -->
+  <div class="control-group">
+    <h4>Presentation Simulation Controls</h4>
+    <button onclick="enableAlertPermissions()" class="setup">1. Enable Website Notifications</button><br>
+    <button onclick="setHeartRate('elevated')" class="warning">Simulate Elevated HR</button>
+    <button onclick="setLight('bright')" class="danger">Simulate Blinding Light</button>
+    <button onclick="triggerOverload('🚨 DISTRESS: General Overload Triggered!')" class="danger">Trigger Full Overload Alert</button>
+    <button onclick="returnToCalm()" class="success">Reset System to Calm</button>
+  </div>
+</div>
+
+<script>
+  // --- NATIVE BROWSER NOTIFICATION & AUDIO ALARM SETUP ---
+  let audioCtx;
+  let beepInterval;
+
+  function enableAlertPermissions() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    
+    if ("Notification" in window) {
+      Notification.requestPermission().then(permission => {
+        if (permission === "granted") {
+          alert("✅ Website Audio Alarms and Native OS Notifications are now enabled!");
+        } else {
+          alert("⚠️ Notification permission denied. Alerts will only show visually on the dashboard.");
+        }
+      });
+    }
+  }
+
+  function playAlarmBeep() {
+    if (!audioCtx) return;
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    
+    oscillator.type = 'square';
+    oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    
+    oscillator.start();
+    oscillator.stop(audioCtx.currentTime + 0.2); 
+  }
+
+  function sendNativeNotification(message) {
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification("Wristband Alert 🚨", { 
+        body: message,
+        requireInteraction: true 
+      });
+    }
+  }
+
+  // --- MAP SETUP (Leaflet.js) ---
+  let currentLat = 12.9779;
+  let currentLng = 77.5952;
+  
+  const map = L.map('map').setView([currentLat, currentLng], 18);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    attribution: 'Tiles &copy; Esri'
+  }).addTo(map);
+
+  const marker = L.marker([currentLat, currentLng]).addTo(map);
+  marker.bindPopup("<b>Wristband Active</b><br>Tracking movement...").openPopup();
+
+  // --- CHART SETUP ---
+  const commonOptions = { responsive: true, maintainAspectRatio: false, animation: false, scales: { x: { display: false } } };
+
+  const hrChart = new Chart(document.getElementById('hrChart').getContext('2d'), {
+    type: 'line', 
+    data: { 
+      labels: Array(20).fill(''), 
+      datasets: [
+        { label: 'BPM', data: Array(20).fill(80), borderColor: '#ff4d4d', tension: 0.3 },
+        { label: 'Alert Limit', data: Array(20).fill(120), borderColor: 'rgba(255, 0, 0, 0.5)', borderDash: [5, 5], borderWidth: 2, pointRadius: 0 }
+      ] 
+    },
+    options: { ...commonOptions, scales: { y: { min: 60, max: 160 }, x: { display: false } } }
+  });
+
+  const soundChart = new Chart(document.getElementById('soundChart').getContext('2d'), {
+    type: 'line', 
+    data: { 
+      labels: Array(20).fill(''), 
+      datasets: [
+        { label: 'dB', data: Array(20).fill(40), borderColor: '#4da6ff', tension: 0.3 },
+        { label: 'Alert Limit', data: Array(20).fill(85), borderColor: 'rgba(255, 0, 0, 0.5)', borderDash: [5, 5], borderWidth: 2, pointRadius: 0 }
+      ] 
+    },
+    options: { ...commonOptions, scales: { y: { min: 30, max: 120 }, x: { display: false } } }
+  });
+
+  const lightChart = new Chart(document.getElementById('lightChart').getContext('2d'), {
+    type: 'line', 
+    data: { 
+      labels: Array(20).fill(''), 
+      datasets: [
+        { label: 'Light %', data: Array(20).fill(50), borderColor: '#ffcc00', tension: 0.3 },
+        { label: 'Alert Limit', data: Array(20).fill(90), borderColor: 'rgba(255, 0, 0, 0.5)', borderDash: [5, 5], borderWidth: 2, pointRadius: 0 }
+      ] 
+    },
+    options: { ...commonOptions, scales: { y: { min: 0, max: 100 }, x: { display: false } } }
+  });
+
+  // --- SIMULATION LOGIC ---
+  let isDistressed = false;
+  let targetLight = 50; 
+  let targetHr = 75; 
+
+  function updateTelemetry() {
+    let newHr = targetHr + (Math.random() * 10 - 5); 
+    let newSound = isDistressed ? (90 + Math.random() * 20) : (40 + Math.random() * 15);
+    let newLight = targetLight + (Math.random() * 4 - 2); 
+
+    const hrLimit = parseFloat(document.getElementById('hrThreshold').value) || 120;
+    const soundLimit = parseFloat(document.getElementById('soundThreshold').value) || 85;
+    const lightLimit = parseFloat(document.getElementById('lightThreshold').value) || 90;
+
+    hrChart.data.datasets[0].data.push(newHr); hrChart.data.datasets[0].data.shift(); 
+    soundChart.data.datasets[0].data.push(newSound); soundChart.data.datasets[0].data.shift(); 
+    lightChart.data.datasets[0].data.push(newLight); lightChart.data.datasets[0].data.shift(); 
+
+    hrChart.data.datasets[1].data = Array(20).fill(hrLimit);
+    soundChart.data.datasets[1].data = Array(20).fill(soundLimit);
+    lightChart.data.datasets[1].data = Array(20).fill(lightLimit);
+
+    hrChart.update();
+    soundChart.update();
+    lightChart.update();
+
+    if (!isDistressed) {
+      if (newHr > hrLimit) triggerOverload(`🚨 DISTRESS DETECTED: Heart Rate Exceeded ${hrLimit} BPM!`);
+      else if (newSound > soundLimit) triggerOverload(`🚨 DISTRESS DETECTED: Sound Level Exceeded ${soundLimit} dB!`);
+      else if (newLight > lightLimit) triggerOverload(`🚨 DISTRESS DETECTED: Light Exceeded ${lightLimit}%!`);
+    }
+
+    currentLat += (Math.random() - 0.5) * 0.00005;
+    currentLng += (Math.random() - 0.5) * 0.00005;
+    
+    const newLatLng = new L.LatLng(currentLat, currentLng);
+    marker.setLatLng(newLatLng);
+    map.panTo(newLatLng, { animate: true, duration: 1 });
+  }
+
+  setInterval(updateTelemetry, 1000);
+
+  // --- CONTROL BUTTONS ---
+  function setHeartRate(mode) {
+    if (mode === 'elevated') targetHr = 135; 
+  }
+  function setLight(mode) {
+    if (mode === 'bright') {
+      targetLight = 95; 
+    }
+  }
+
+  function triggerOverload(customMessage) {
+    if (isDistressed) return; 
+    isDistressed = true;
+    targetHr = 135;
+    
+    let panel = document.getElementById('statusPanel');
+    panel.className = 'status-panel alert';
+    panel.innerText = customMessage;
+
+    let vibrator = document.getElementById('vibratorCard');
+    vibrator.className = 'vibrator-card active';
+    document.getElementById('motorIcon').innerText = "〰️📱〰️";
+    document.getElementById('motorText').innerText = "Vibration Motor: ACTIVE";
+
+    if (!beepInterval) {
+      beepInterval = setInterval(playAlarmBeep, 500);
+    }
+
+    sendNativeNotification("High stress levels detected! Open dashboard to view location:\nGoogle Maps: https://www.google.com/maps?q=" + currentLat + "," + currentLng);
+  }
+
+  function returnToCalm() {
+    isDistressed = false; targetHr = 75; targetLight = 50;
+    
+    clearInterval(beepInterval);
+    beepInterval = null;
+    
+    let panel = document.getElementById('statusPanel');
+    panel.className = 'status-panel';
+    panel.innerText = "Status: Calm Environment (No Distress)";
+
+    let vibrator = document.getElementById('vibratorCard');
+    vibrator.className = 'vibrator-card';
+    document.getElementById('motorIcon').innerText = "⏸️";
+    document.getElementById('motorText').innerText = "Vibration Motor: IDLE";
+  }
+</script>
+
+</body>
+</html>
